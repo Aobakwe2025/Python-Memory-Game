@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python Memory Puzzle</title>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0d1a;
+    --surface: #12122a;
+    --card-back: #1a1a3e;
+    --python-blue: #306998;
+    --python-yellow: #FFD43B;
+    --python-green: #4CAF50;
+    --neon-cyan: #00f5ff;
+    --neon-pink: #ff2d78;
+    --neon-purple: #b700ff;
+    --text: #e0e0ff;
+    --muted: #6666aa;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    font-family: 'Fira Code', monospace;
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 20%, rgba(48,105,152,0.15) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(183,0,255,0.1) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 50%, rgba(0,245,255,0.05) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .grid-bg {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,245,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,245,255,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #app {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  header {
+    text-align: center;
+    padding: 30px 0 20px;
+  }
+
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: clamp(1.8rem, 5vw, 3rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+
+  .logo .py { color: var(--python-yellow); }
+  .logo .thon { color: var(--neon-cyan); }
+  .logo .mem { color: var(--neon-pink); }
+  .logo .ory { color: var(--text); opacity: 0.7; }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.78rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+
+  /* HUD */
+  .hud {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+  }
+
+  .hud-card {
+    background: var(--surface);
+    border: 1px solid rgba(0,245,255,0.15);
+    border-radius: 10px;
+    padding: 12px 20px;
+    text-align: center;
+    min-width: 100px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hud-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--neon-cyan), var(--python-yellow));
+  }
+
+  .hud-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .hud-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--python-yellow);
+  }
+
+  .hud-value.timer { color: var(--neon-cyan); }
+  .hud-value.timer.urgent { color: var(--neon-pink); animation: pulse 0.5s infinite alternate; }
+  .hud-value.score { color: var(--neon-purple); }
+
+  @keyframes pulse {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0.6; transform: scale(1.05); }
+  }
+
+  /* GRID */
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 20px 0;
+  }
+
+  @media (max-width: 500px) {
+    #grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  }
+
+  .card {
+    aspect-ratio: 3/4;
+    cursor: pointer;
+    perspective: 600px;
+    position: relative;
+  }
+
+  .card-inner {
+    width: 100%; height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.5s cubic-bezier(0.4,0,0.2,1);
+    border-radius: 12px;
+  }
+
+  .card.flipped .card-inner,
+  .card.matched .card-inner {
+    transform: rotateY(180deg);
+  }
+
+  .card-face {
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+    backface-visibility: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* Card Back */
+  .card-back {
+    background: var(--card-back);
+    border: 1px solid rgba(0,245,255,0.2);
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color 0.2s;
+  }
+
+  .card:hover:not(.flipped):not(.matched) .card-back {
+    border-color: var(--neon-cyan);
+    box-shadow: 0 0 20px rgba(0,245,255,0.2);
+  }
+
+  .card-back-icon {
+    font-size: 2rem;
+    opacity: 0.5;
+  }
+
+  .card-back-text {
+    font-size: 0.55rem;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  /* Card Front */
+  .card-front {
+    transform: rotateY(180deg);
+    flex-direction: column;
+    padding: 10px 8px;
+    text-align: center;
+  }
+
+  .card-emoji {
+    font-size: clamp(1.5rem, 4vw, 2.2rem);
+    margin-bottom: 6px;
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+
+  .card-label {
+    font-size: clamp(0.5rem, 1.5vw, 0.65rem);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    line-height: 1.3;
+    word-break: break-word;
+  }
+
+  .card.matched .card-front {
+    border: 2px solid var(--python-green) !important;
+    box-shadow: 0 0 25px rgba(76,175,80,0.4), inset 0 0 15px rgba(76,175,80,0.1) !important;
+  }
+
+  .card.matched .card-front::after {
+    content: '✓';
+    position: absolute;
+    top: 6px; right: 8px;
+    color: var(--python-green);
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
+  /* Fact panel */
+  #fact-panel {
+    background: var(--surface);
+    border: 1px solid rgba(255,212,59,0.3);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.4s ease;
+    opacity: 0;
+  }
+
+  #fact-panel.visible {
+    opacity: 1;
+  }
+
+  #fact-panel::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: linear-gradient(to bottom, var(--python-yellow), var(--neon-cyan));
+    border-radius: 3px 0 0 3px;
+  }
+
+  .fact-icon { font-size: 1.6rem; flex-shrink: 0; }
+
+  .fact-content {}
+  .fact-title {
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--python-yellow);
+    margin-bottom: 4px;
+  }
+
+  .fact-text {
+    font-size: 0.75rem;
+    color: var(--text);
+    line-height: 1.5;
+    opacity: 0.9;
+  }
+
+  /* Buttons */
+  .btn-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin: 16px 0;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--python-blue), var(--neon-purple));
+    color: white;
+    border: 1px solid rgba(0,245,255,0.3);
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,245,255,0.25);
+  }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--neon-cyan);
+    border: 1px solid var(--neon-cyan);
+  }
+
+  .btn-outline:hover {
+    background: rgba(0,245,255,0.1);
+    transform: translateY(-2px);
+  }
+
+  /* Difficulty */
+  .difficulty-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 16px;
+  }
+
+  .diff-btn {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.65rem;
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--muted);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.05em;
+  }
+
+  .diff-btn.active {
+    border-color: var(--python-yellow);
+    color: var(--python-yellow);
+    background: rgba(255,212,59,0.1);
+  }
+
+  /* Overlay */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(13,13,26,0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+
+  .overlay.hidden { display: none; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid rgba(0,245,255,0.25);
+    border-radius: 20px;
+    padding: 40px;
+    max-width: 420px;
+    width: 90%;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .modal::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--python-yellow), var(--neon-cyan), var(--neon-pink));
+  }
+
+  .modal-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+
+  .modal-subtitle {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-bottom: 24px;
+    line-height: 1.6;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .stat-box {
+    background: rgba(0,0,0,0.3);
+    border-radius: 10px;
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .stat-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--python-yellow);
+  }
+
+  .stat-lbl { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* Stars */
+  .stars { font-size: 2rem; margin-bottom: 16px; letter-spacing: 0.1em; }
+
+  /* Progress bar */
+  .progress-bar {
+    width: 100%;
+    height: 4px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--python-yellow), var(--neon-cyan));
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  .progress-label {
+    font-size: 0.6rem;
+    color: var(--muted);
+    text-align: right;
+    margin-bottom: 4px;
+    letter-spacing: 0.1em;
+  }
+
+  /* Confetti */
+  .confetti-piece {
+    position: fixed;
+    width: 8px; height: 8px;
+    border-radius: 2px;
+    animation: confettiFall 1.5s ease-in forwards;
+    pointer-events: none;
+    z-index: 200;
+  }
+
+  @keyframes confettiFall {
+    0% { transform: translateY(-10px) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+  }
+
+  @keyframes cardMatch {
+    0% { transform: rotateY(180deg) scale(1); }
+    50% { transform: rotateY(180deg) scale(1.1); }
+    100% { transform: rotateY(180deg) scale(1); }
+  }
+
+  .card.matched .card-inner {
+    animation: cardMatch 0.4s ease;
+  }
+
+  .card.shake .card-inner {
+    animation: shake 0.4s ease;
+    transform: rotateY(180deg);
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: rotateY(180deg) translateX(0); }
+    25% { transform: rotateY(180deg) translateX(-6px); }
+    75% { transform: rotateY(180deg) translateX(6px); }
+  }
+
+  @keyframes flipBack {
+    to { transform: rotateY(0deg); }
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div id="app">
+  <header>
+    <div class="logo">
+      <span class="py">Py</span><span class="thon">thon</span>
+      <span class="mem">Mem</span><span class="ory">ory</span>
+    </div>
+    <div class="subtitle">>>> match the pairs · learn python · beat the clock</div>
+  </header>
+
+  <div class="difficulty-row" id="diff-row">
+    <button class="diff-btn active" data-diff="easy">Easy (60s)</button>
+    <button class="diff-btn" data-diff="medium">Medium (45s)</button>
+    <button class="diff-btn" data-diff="hard">Hard (30s)</button>
+  </div>
+
+  <div class="hud">
+    <div class="hud-card">
+      <div class="hud-label">Time</div>
+      <div class="hud-value timer" id="timer">60</div>
+    </div>
+    <div class="hud-card">
+      <div class="hud-label">Score</div>
+      <div class="hud-value score" id="score">0</div>
+    </div>
+    <div class="hud-card">
+      <div class="hud-label">Moves</div>
+      <div class="hud-value" id="moves">0</div>
+    </div>
+    <div class="hud-card">
+      <div class="hud-label">Pairs</div>
+      <div class="hud-value" id="pairs">0/8</div>
+    </div>
+  </div>
+
+  <div class="progress-label">Pairs matched</div>
+  <div class="progress-bar"><div class="progress-fill" id="progress" style="width:0%"></div></div>
+
+  <div id="grid"></div>
+
+  <div id="fact-panel">
+    <div class="fact-icon" id="fact-icon">🐍</div>
+    <div class="fact-content">
+      <div class="fact-title">🐍 Python Fun Fact</div>
+      <div class="fact-text" id="fact-text">Match a pair to reveal a Python fun fact!</div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-start">▶ Start Game</button>
+    <button class="btn btn-outline" id="btn-reset" style="display:none">↺ New Game</button>
+  </div>
+</div>
+
+<!-- Overlays -->
+<div class="overlay" id="overlay-win">
+  <div class="modal">
+    <div class="stars" id="win-stars">⭐⭐⭐</div>
+    <div class="modal-title" style="color:var(--python-yellow)">You Won! 🎉</div>
+    <div class="modal-subtitle" id="win-subtitle">Excellent Python knowledge!</div>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="stat-val" id="ws-score">0</div><div class="stat-lbl">Score</div></div>
+      <div class="stat-box"><div class="stat-val" id="ws-time">0s</div><div class="stat-lbl">Time Left</div></div>
+      <div class="stat-box"><div class="stat-val" id="ws-moves">0</div><div class="stat-lbl">Moves</div></div>
+      <div class="stat-box"><div class="stat-val" id="ws-bonus">+0</div><div class="stat-lbl">Time Bonus</div></div>
+    </div>
+    <button class="btn btn-primary" onclick="startGame()">▶ Play Again</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="overlay-lose">
+  <div class="modal">
+    <div style="font-size:3rem;margin-bottom:12px">💀</div>
+    <div class="modal-title" style="color:var(--neon-pink)">Time's Up!</div>
+    <div class="modal-subtitle" id="lose-subtitle">The Python escaped... try again!</div>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="stat-val" id="ls-score">0</div><div class="stat-lbl">Score</div></div>
+      <div class="stat-box"><div class="stat-val" id="ls-pairs">0/8</div><div class="stat-lbl">Pairs Found</div></div>
+    </div>
+    <button class="btn btn-primary" onclick="startGame()">▶ Try Again</button>
+  </div>
+</div>
+
+<script>
+const CARDS_DATA = [
+  { id: 'guido', emoji: '🧑‍💻', label: 'Guido van Rossum', color: '#306998', borderColor: '#306998',
+    fact: 'Python was created by Guido van Rossum and first released in 1991. He named it after Monty Python\'s Flying Circus, not the snake!' },
+  { id: 'snake', emoji: '🐍', label: 'Python Logo', color: '#FFD43B', borderColor: '#FFD43B',
+    fact: 'Python\'s logo features two intertwined snakes. The language is one of the most popular in the world, used by NASA, Google, Instagram, and Spotify!' },
+  { id: 'zen', emoji: '☯️', label: 'The Zen of Python', color: '#00f5ff', borderColor: '#00f5ff',
+    fact: 'Type `import this` in Python to read the Zen of Python — 19 guiding aphorisms written by Tim Peters. "Beautiful is better than ugly." 🐍' },
+  { id: 'duck', emoji: '🦆', label: 'Duck Typing', color: '#ff9800', borderColor: '#ff9800',
+    fact: 'Python uses "duck typing" — if it walks like a duck and quacks like a duck, it\'s a duck! Types are checked at runtime, not compile time.' },
+  { id: 'lambda', emoji: 'λ', label: 'Lambda Functions', color: '#b700ff', borderColor: '#b700ff',
+    fact: 'Python supports lambda (anonymous) functions. `square = lambda x: x**2` — compact one-liners inspired by functional programming!' },
+  { id: 'pip', emoji: '📦', label: 'PIP Package Manager', color: '#4CAF50', borderColor: '#4CAF50',
+    fact: 'PyPI (the Python Package Index) hosts over 500,000 packages! You can install any with just `pip install <package>`.' },
+  { id: 'list', emoji: '📋', label: 'List Comprehensions', color: '#ff2d78', borderColor: '#ff2d78',
+    fact: 'List comprehensions are Pythonic magic: `[x**2 for x in range(10) if x % 2 == 0]` — readable, fast, and very Pythonic!' },
+  { id: 'gc', emoji: '♻️', label: 'Garbage Collector', color: '#00bcd4', borderColor: '#00bcd4',
+    fact: 'Python uses automatic memory management with reference counting + a cyclic garbage collector. You never need to manually free memory!' },
+];
+
+const DIFFICULTY = { easy: 60, medium: 45, hard: 30 };
+
+let state = {
+  cards: [],
+  flipped: [],
+  matched: [],
+  moves: 0,
+  score: 0,
+  time: 60,
+  timer: null,
+  running: false,
+  diff: 'easy',
+  locked: false,
+};
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildCards() {
+  const pairs = CARDS_DATA.map(c => [
+    { ...c, uid: c.id + '_a' },
+    { ...c, uid: c.id + '_b' },
+  ]).flat();
+  return shuffle(pairs);
+}
+
+function startGame() {
+  clearInterval(state.timer);
+  state.cards = buildCards();
+  state.flipped = [];
+  state.matched = [];
+  state.moves = 0;
+  state.score = 0;
+  state.time = DIFFICULTY[state.diff];
+  state.running = true;
+  state.locked = false;
+
+  document.getElementById('overlay-win').classList.add('hidden');
+  document.getElementById('overlay-lose').classList.add('hidden');
+  document.getElementById('btn-start').style.display = 'none';
+  document.getElementById('btn-reset').style.display = '';
+
+  renderGrid();
+  updateHUD();
+  hideFact();
+
+  state.timer = setInterval(() => {
+    if (!state.running) return;
+    state.time--;
+    updateHUD();
+    if (state.time <= 0) endGame(false);
+  }, 1000);
+}
+
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  state.cards.forEach((card, i) => {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.index = i;
+    el.innerHTML = `
+      <div class="card-inner">
+        <div class="card-face card-back">
+          <div class="card-back-icon">🐍</div>
+          <div class="card-back-text">Python</div>
+        </div>
+        <div class="card-face card-front" style="background:linear-gradient(135deg, ${card.color}22, ${card.color}44); border:1.5px solid ${card.borderColor}88;">
+          <div class="card-emoji" style="color:${card.color}">${card.emoji}</div>
+          <div class="card-label" style="color:${card.color}">${card.label}</div>
+        </div>
+      </div>`;
+    el.addEventListener('click', () => flipCard(i));
+    grid.appendChild(el);
+  });
+}
+
+function flipCard(i) {
+  if (!state.running || state.locked) return;
+  if (state.flipped.includes(i)) return;
+  if (state.matched.includes(i)) return;
+  if (state.flipped.length >= 2) return;
+
+  state.flipped.push(i);
+  const cardEl = document.querySelector(`[data-index="${i}"]`);
+  cardEl.classList.add('flipped');
+
+  if (state.flipped.length === 2) {
+    state.moves++;
+    state.locked = true;
+    updateHUD();
+    checkMatch();
+  }
+}
+
+function checkMatch() {
+  const [a, b] = state.flipped;
+  const ca = state.cards[a];
+  const cb = state.cards[b];
+
+  if (ca.id === cb.id) {
+    // Match!
+    setTimeout(() => {
+      state.matched.push(a, b);
+      state.score += 100 + Math.floor(state.time * 2);
+      state.flipped = [];
+      state.locked = false;
+
+      const elA = document.querySelector(`[data-index="${a}"]`);
+      const elB = document.querySelector(`[data-index="${b}"]`);
+      elA.classList.add('matched');
+      elB.classList.add('matched');
+
+      showFact(ca);
+      updateHUD();
+      spawnConfetti();
+
+      if (state.matched.length === state.cards.length) {
+        setTimeout(() => endGame(true), 500);
+      }
+    }, 400);
+  } else {
+    // No match
+    const elA = document.querySelector(`[data-index="${a}"]`);
+    const elB = document.querySelector(`[data-index="${b}"]`);
+    elA.classList.add('shake');
+    elB.classList.add('shake');
+
+    setTimeout(() => {
+      elA.classList.remove('flipped', 'shake');
+      elB.classList.remove('flipped', 'shake');
+      state.flipped = [];
+      state.locked = false;
+    }, 800);
+  }
+}
+
+function endGame(won) {
+  clearInterval(state.timer);
+  state.running = false;
+
+  if (won) {
+    const bonus = state.time * 10;
+    state.score += bonus;
+    const stars = state.moves <= 12 ? '⭐⭐⭐' : state.moves <= 18 ? '⭐⭐' : '⭐';
+    document.getElementById('win-stars').textContent = stars;
+    document.getElementById('win-subtitle').textContent =
+      state.moves <= 12 ? 'Perfect game! You\'re a Python master! 🏆' :
+      state.moves <= 18 ? 'Great job! A Pythonista in the making!' :
+      'You made it! Keep practicing to get faster!';
+    document.getElementById('ws-score').textContent = state.score;
+    document.getElementById('ws-time').textContent = state.time + 's';
+    document.getElementById('ws-moves').textContent = state.moves;
+    document.getElementById('ws-bonus').textContent = '+' + bonus;
+    document.getElementById('overlay-win').classList.remove('hidden');
+    bigConfetti();
+  } else {
+    document.getElementById('ls-score').textContent = state.score;
+    document.getElementById('ls-pairs').textContent = (state.matched.length / 2) + '/8';
+    document.getElementById('overlay-lose').classList.remove('hidden');
+  }
+}
+
+function updateHUD() {
+  const timerEl = document.getElementById('timer');
+  timerEl.textContent = state.time;
+  timerEl.className = 'hud-value timer' + (state.time <= 10 ? ' urgent' : '');
+  document.getElementById('score').textContent = state.score;
+  document.getElementById('moves').textContent = state.moves;
+  const pairsFound = state.matched.length / 2;
+  document.getElementById('pairs').textContent = pairsFound + '/8';
+  document.getElementById('progress').style.width = (pairsFound / 8 * 100) + '%';
+}
+
+function showFact(card) {
+  const panel = document.getElementById('fact-panel');
+  document.getElementById('fact-icon').textContent = card.emoji;
+  document.getElementById('fact-text').textContent = card.fact;
+  panel.classList.add('visible');
+}
+
+function hideFact() {
+  const panel = document.getElementById('fact-panel');
+  panel.classList.remove('visible');
+  document.getElementById('fact-text').textContent = 'Match a pair to reveal a Python fun fact!';
+}
+
+function spawnConfetti() {
+  const colors = ['#FFD43B', '#306998', '#00f5ff', '#ff2d78', '#b700ff', '#4CAF50'];
+  for (let i = 0; i < 12; i++) {
+    const el = document.createElement('div');
+    el.className = 'confetti-piece';
+    el.style.cssText = `
+      left: ${20 + Math.random() * 60}%;
+      top: ${20 + Math.random() * 40}%;
+      background: ${colors[Math.floor(Math.random() * colors.length)]};
+      animation-delay: ${Math.random() * 0.3}s;
+      animation-duration: ${0.8 + Math.random() * 0.7}s;
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1500);
+  }
+}
+
+function bigConfetti() {
+  const colors = ['#FFD43B', '#306998', '#00f5ff', '#ff2d78', '#b700ff', '#4CAF50', '#ff9800'];
+  for (let i = 0; i < 60; i++) {
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.className = 'confetti-piece';
+      el.style.cssText = `
+        left: ${Math.random() * 100}%;
+        top: -20px;
+        background: ${colors[Math.floor(Math.random() * colors.length)]};
+        animation-duration: ${1 + Math.random() * 1.5}s;
+        width: ${6 + Math.random() * 8}px;
+        height: ${6 + Math.random() * 8}px;
+        border-radius: ${Math.random() > 0.5 ? '50%' : '2px'};
+      `;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2500);
+    }, i * 30);
+  }
+}
+
+// Difficulty buttons
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (state.running) return;
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.diff = btn.dataset.diff;
+    state.time = DIFFICULTY[state.diff];
+    document.getElementById('timer').textContent = state.time;
+  });
+});
+
+document.getElementById('btn-start').addEventListener('click', startGame);
+document.getElementById('btn-reset').addEventListener('click', startGame);
+
+// Init timer display
+document.getElementById('timer').textContent = '60';
+</script>
+</body>
+</html>
